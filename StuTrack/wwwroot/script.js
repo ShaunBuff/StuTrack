@@ -176,12 +176,14 @@ function showToast(message) {
 // Update dashboard numbers and progress.
 function updateDashboard() {
     const total = assignments.length;
+
     const completed = assignments.filter(
         assignment => assignment.status === "Completed"
     ).length;
 
     const outstanding = total - completed;
     const overdue = assignments.filter(isOverdue).length;
+
     const percentage = total === 0
         ? 0
         : Math.round((completed / total) * 100);
@@ -284,6 +286,7 @@ function createAssignmentCard(assignment) {
 
     const details = document.createElement("div");
     details.className = "assignment-badges";
+
     details.appendChild(createStatusBadge(assignment.status));
     details.appendChild(createPriorityBadge(assignment.priority));
 
@@ -292,7 +295,8 @@ function createAssignmentCard(assignment) {
 
     if (isOverdue(assignment)) {
         deadline.classList.add("overdue");
-        deadline.textContent = `Overdue · Due ${formatDate(assignment.dueDate)}`;
+        deadline.textContent =
+            `Overdue · Due ${formatDate(assignment.dueDate)}`;
     } else {
         deadline.textContent = `Due ${formatDate(assignment.dueDate)}`;
     }
@@ -377,10 +381,14 @@ function getFilteredAssignments() {
                 || assignment.module.toLowerCase().includes(searchText);
 
             const matchesStatus =
-                !statusFilter || assignment.status === statusFilter;
+                statusFilter === "All"
+                || !statusFilter
+                || assignment.status === statusFilter;
 
             const matchesPriority =
-                !priorityFilter || assignment.priority === priorityFilter;
+                priorityFilter === "All"
+                || !priorityFilter
+                || assignment.priority === priorityFilter;
 
             return matchesSearch && matchesStatus && matchesPriority;
         })
@@ -462,6 +470,7 @@ function resetAssignmentForm() {
 // Open the assignment form.
 function openAssignmentForm() {
     resetAssignmentForm();
+
     getElement("assignment-form-section").scrollIntoView({
         behavior: "smooth",
         block: "start"
@@ -502,9 +511,12 @@ function handleFormSubmit(event) {
         assignment => assignment.id === id
     );
 
-    if (existingIndex >= 0) {
-        const previousAssignment = assignments[existingIndex];
+    // Keep a copy so the previous details can be restored if saving fails.
+    const previousAssignment = existingIndex >= 0
+        ? assignments[existingIndex]
+        : null;
 
+    if (existingIndex >= 0) {
         assignments[existingIndex] = {
             ...previousAssignment,
             title,
@@ -536,7 +548,9 @@ function handleFormSubmit(event) {
     }
 
     getElement("assignment-form-section").hidden = true;
+
     renderApp();
+
     showToast(existingIndex >= 0
         ? "Assignment updated successfully."
         : "Assignment added successfully.");
@@ -592,6 +606,7 @@ function changeStatus(id, newStatus) {
     }
 
     renderApp();
+
     showToast(`Assignment marked as ${newStatus.toLowerCase()}.`);
 }
 
@@ -604,6 +619,7 @@ function askToDelete(id) {
     }
 
     deleteAssignmentId = id;
+
     getElement("delete-message").textContent =
         `Are you sure you want to delete "${assignment.title}"? This action cannot be undone.`;
 
@@ -617,6 +633,7 @@ function confirmDelete() {
     }
 
     const previousAssignments = assignments;
+
     assignments = assignments.filter(
         assignment => assignment.id !== deleteAssignmentId
     );
@@ -630,10 +647,11 @@ function confirmDelete() {
     deleteAssignmentId = null;
 
     renderApp();
+
     showToast("Assignment deleted.");
 }
 
-// Copy assignment details to the clipboard or offer a text fallback.
+// Copy assignment details to the clipboard.
 async function shareAssignment(assignment) {
     const text = [
         `Assignment: ${assignment.title}`,
@@ -643,15 +661,45 @@ async function shareAssignment(assignment) {
         `Status: ${assignment.status}`
     ].join("\n");
 
+    // First attempt: modern Clipboard API.
     try {
         if (navigator.clipboard && window.isSecureContext) {
             await navigator.clipboard.writeText(text);
+
             showToast("Assignment details copied to the clipboard.");
-        } else {
-            window.prompt("Copy these assignment details:", text);
+            return;
         }
     } catch (error) {
-        console.error("Could not copy assignment details:", error);
+        console.warn("Clipboard API unavailable:", error);
+    }
+
+    // Second attempt: alternative browser copying method.
+    const textArea = document.createElement("textarea");
+
+    textArea.value = text;
+    textArea.style.position = "fixed";
+    textArea.style.left = "-9999px";
+    textArea.setAttribute("readonly", "");
+
+    document.body.appendChild(textArea);
+
+    textArea.select();
+    textArea.setSelectionRange(0, textArea.value.length);
+
+    let copied = false;
+
+    try {
+        copied = document.execCommand("copy");
+    } catch (error) {
+        console.error("Alternative copy method failed:", error);
+    }
+
+    textArea.remove();
+
+    if (copied) {
+        showToast("Assignment details copied to the clipboard.");
+    } else {
+        // Final fallback: allow the user to copy manually.
         window.prompt("Copy these assignment details:", text);
     }
 }
@@ -659,8 +707,8 @@ async function shareAssignment(assignment) {
 // Reset search and filters.
 function resetFilters() {
     getElement("search-input").value = "";
-    getElement("status-filter").value = "";
-    getElement("priority-filter").value = "";
+    getElement("status-filter").value = "All";
+    getElement("priority-filter").value = "All";
 
     renderAssignments();
 }
@@ -769,10 +817,15 @@ document.addEventListener("DOMContentLoaded", () => {
     const missingIds = requiredIds.filter(id => !getElement(id));
 
     if (missingIds.length > 0) {
-        console.error("StuTrack is missing these HTML elements:", missingIds);
+        console.error(
+            "StuTrack is missing these HTML elements:",
+            missingIds
+        );
+
         alert(
             "Some StuTrack HTML elements are missing. Check the browser console for details."
         );
+
         return;
     }
 
